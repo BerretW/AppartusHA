@@ -35,18 +35,22 @@ class BlockManager:
 
     def _lua_set_mqtt_output(self, block_id, output_name, value):
         """Voláno z Lua. Publikuje zprávu na MQTT a aktualizuje interní cache."""
+        
+        # --- LADICÍ VÝPIS 1 ---
+        print(f"DEBUG: _lua_set_mqtt_output voláno pro blok '{block_id}' s hodnotou '{value}'. Pokus o zápis do cache.")
+        
         block_info = self.block_instances.get(block_id)
         if block_info and output_name in block_info['outputs']:
             topic = block_info['outputs'][output_name]
             
-            # Aktualizujeme cache PŘED publikováním. Tím zajistíme, že stav je
-            # okamžitě dostupný přes API, i když klient nepřijme vlastní zprávu.
-            # Hodnotu ukládáme jako string, protože tak je typicky přenášena přes MQTT.
-            self.state_cache.set(topic, str(value))
+            # --- LADICÍ VÝPIS 2 ---
+            print(f"DEBUG: Aktualizuji cache pro téma '{topic}' s hodnotou '{value}'")
             
+            self.state_cache.set(topic, str(value))
             self.mqtt_client.publish(topic, value)
         else:
-            logger.warning(f"Lua block {block_id} tried to publish on unknown output '{output_name}'")
+            # --- LADICÍ VÝPIS 3 ---
+            print(f"DEBUG: CHYBA - Nepodařilo se najít výstup '{output_name}' pro blok '{block_id}'")
 
     def _lua_get_hardware_input(self, block_id, input_type, pin_or_addr):
         """Voláno z Lua. Čte hodnotu z hardwarového rozhraní."""

@@ -63,6 +63,12 @@ def run_web_server(block_manager, all_blocks_config, state_cache):
 
     @app.route('/api/status/<path:topic>', methods=['GET'])
     def get_topic_status(topic):
+        """Vrátí poslední známý stav konkrétního MQTT tématu z cache."""
+        
+        # --- LADICÍ VÝPIS ---
+        all_cache_content = state_cache.get_all()
+        print(f"DEBUG: Obsah cache v momentě dotazu na '{topic}': {all_cache_content}")
+        
         value = state_cache.get(topic)
         if value is not None:
             return jsonify({"topic": topic, "value": value})
