@@ -29,19 +29,12 @@ class Socket(QGraphicsObject):
     def add_connection(self, conn): self.connections.append(conn)
     def remove_connection(self, conn):
         if conn in self.connections: self.connections.remove(conn)
-
     def mouseDoubleClickEvent(self, event):
-        """ Při dvojkliku na socket rozpojí všechna jeho spojení. """
         for conn in list(self.connections):
             conn.start_socket.remove_connection(conn)
-            if conn.end_socket:
-                conn.end_socket.remove_connection(conn)
-            
-            if self.scene():
-                self.scene().removeItem(conn)
-        
-        event.accept()
-        super().mouseDoubleClickEvent(event)
+            if conn.end_socket: conn.end_socket.remove_connection(conn)
+            if self.scene(): self.scene().removeItem(conn)
+        event.accept(); super().mouseDoubleClickEvent(event)
 
 class Connection(QGraphicsPathItem):
     def __init__(self, start_socket, end_socket=None):
@@ -202,6 +195,7 @@ class PropertiesPanel(QWidget):
             
         form_layout = QFormLayout(); self.form_widget.setLayout(form_layout)
         
+        # --- HLAVNÍ NASTAVENÍ ---
         title = QLabel(f"<b>Nastavení: {block.def_['title']}</b>"); form_layout.addRow(title)
         
         id_edit = QLineEdit(block.data.get('id', ''))
@@ -209,6 +203,7 @@ class PropertiesPanel(QWidget):
         id_edit.textChanged.connect(lambda text, b=block: self.update_data(b, 'id', text))
         form_layout.addRow("ID bloku:", id_edit)
 
+        # --- OPRAVENÁ SMYČKA PRO KONFIGURAČNÍ POLE ---
         for field in block.def_['fields']:
             val = block.data.get(field['name'])
             widget = None
@@ -222,8 +217,11 @@ class PropertiesPanel(QWidget):
             else: 
                 widget = QLineEdit(str(val) if val is not None else ""); widget.setPlaceholderText(field.get('placeholder', ''))
                 widget.textChanged.connect(lambda text, b=block, n=field['name']: self.update_data(b, n, text))
-            if widget: form_layout.addRow(field['label'] + ":", widget)
+            
+            if widget:
+                form_layout.addRow(field['label'] + ":", widget)
 
+        # --- SEKCE VSTUPŮ (ZOBRAZENÍ) ---
         if block.inputs:
             form_layout.addRow(QLabel(" ")); form_layout.addRow(QLabel("<b>Vstupy (napojeno na):</b>"))
             for socket in block.inputs:
@@ -234,6 +232,7 @@ class PropertiesPanel(QWidget):
                     topic_label.setText(f"<b>{source_id}</b> -> {source_output}"); topic_label.setStyleSheet("color: white;")
                 form_layout.addRow(f"{socket.socket_name}:", topic_label)
         
+        # --- SEKCE VÝSTUPŮ (EDITACE) ---
         if block.outputs:
             form_layout.addRow(QLabel(" ")); form_layout.addRow(QLabel("<b>Výstupy (MQTT Témata):</b>"))
             for socket in block.outputs:
@@ -319,7 +318,7 @@ class MainWindow(QMainWindow):
             
             config_data = {}
             for key, val in block_item.data.items():
-                if key != 'id' and val != '':
+                if key != 'id' and (val != '' or isinstance(val, bool)):
                     field_def = next((f for f in block_item.def_['fields'] if f['name'] == key), None)
                     if field_def:
                         try:
@@ -342,9 +341,11 @@ class MainWindow(QMainWindow):
                     if not source_id_val: source_id_val = f"{source_block.block_type.lower()}_{id_map[source_block]+1}"
                     
                     override = source_block.topic_overrides.get(source_socket.socket_name, "").strip()
-                    source_topic = override if override else f"smarthome/{source_id_val}/{source_socket.socket_name}"
                     
-                    inputs[socket.socket_name] = {"topic": source_topic}
+                    inputs[socket.socket_name] = {
+                        "source_block_id": source_id_val,
+                        "source_output": source_socket.socket_name
+                    }
             
             if inputs: block_dict["inputs"] = inputs
             if outputs: block_dict["outputs"] = outputs
