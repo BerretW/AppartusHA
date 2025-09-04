@@ -14,7 +14,7 @@ class HardwareInterface:
         self.digital_outputs = {} # pin -> current_state
         self.analog_inputs = {}   # pin -> current_value (0-1023 pro simulaci ADC)
         self.dali_devices = {}    # device_address -> brightness
-        
+
         # Simulace GPIO pinů (např. BCM číslování)
         # Reálná implementace by volala RPi.GPIO.setup()
         for i in range(2, 28): # Zhruba dostupné GPIO piny
@@ -75,7 +75,7 @@ class HardwareInterface:
                 logger.info(f"*** SIMULATION: Digital input pin {pin} changed to {state} ***")
                 return True
         return False
-    
+
     def simulate_analog_input_change(self, pin, value):
         if pin in self.analog_inputs:
             old_value = self.analog_inputs[pin]

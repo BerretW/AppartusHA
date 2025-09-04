@@ -8,32 +8,62 @@
             "lua_script": "lighting_block.lua",
             "config": {
                 "default_brightness": 100,
-                "output_pin": 17,
-                "supports_dimming": true,
-                "web_editable_variables": ["default_brightness", "supports_dimming"]
+                "output_pin": 17
             },
             "inputs": {
                 "power_button": {"source_block_id": "button_hall_entry", "source_output": "state"},
-                "motion_sensor": {"source_block_id": "motion_hall", "source_output": "detected"},
-                "daylight_sensor": {"source_block_id": "sensor_outside_light", "source_output": "lux"}
+                "master_switch": {"source_block_id": "master_shutdown_logic", "source_output": "state"},
+                "temperature_check": {"source_block_id": "http_in_pocasi", "source_output": "value"}
             },
             "outputs": {
-                "status": "mqtt/light/hall/1/status",
-                "current_brightness": "mqtt/light/hall/1/brightness"
+                "status": "smarthome/light/hall/1/status"
             }
         },
         {
             "id": "button_hall_entry",
             "type": "DigitalInput",
             "lua_script": "digital_input_block.lua",
-            "config": {
-                "input_pin": 4,
-                "pull_up_down": "PULL_UP",
-                "debounce_time_ms": 50
+            "config": { "input_pin": 4 },
+            "outputs": {
+                "state": "smarthome/button/hall/entry/state",
+                "double_click": "smarthome/button/hall/entry/double_click"
+            }
+        },
+        {
+            "id": "master_shutdown_logic",
+            "type": "Logic",
+            "lua_script": "logic_block.lua",
+            "config": { "default_state": true },
+            "inputs": {
+                "toggle": {"source_block_id": "button_hall_entry", "source_output": "double_click"}
             },
             "outputs": {
-                "state": "mqtt/button/hall/entry/state",
-                "double_click": "mqtt/button/hall/entry/double_click"
+                "state": "smarthome/virtual/master_shutdown/state"
+            }
+        },
+        {
+            "id": "http_in_pocasi",
+            "type": "HttpInput",
+            "lua_script": "http_input_block.lua",
+            "config": {
+                "endpoint": "/pocasi/teplota"
+            },
+            "outputs": {
+                "value": "smarthome/virtual/weather/temperature"
+            }
+        },
+        {
+            "id": "thermostat_living_room",
+            "type": "Thermostat",
+            "lua_script": "thermostat_block.lua",
+            "config": {
+                "set_point": 21.5
+            },
+            "inputs": {
+                "current_temperature": {"source_block_id": "http_in_pocasi", "source_output": "value"}
+            },
+            "outputs": {
+                "heating_state": "smarthome/thermostat/living_room/state"
             }
         }
     ]
