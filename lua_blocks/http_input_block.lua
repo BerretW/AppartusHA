@@ -9,9 +9,7 @@ fields =
 @endblockinfo
 ]]--
 
-
-
-local M = {} -- Vytvoříme tabulku pro náš modul
+local M = {}
 
 local block_id_g
 
@@ -25,4 +23,4 @@ function M.on_input(input_name, value)
     py_set_mqtt_output(block_id_g, "value", value)
 end
 
-return M -- Na konci vrátíme tabulku
+return M

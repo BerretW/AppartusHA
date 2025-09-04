@@ -8,41 +8,42 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QListWidget, QG
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPainterPath, QDrag, QFont
 from PyQt5.QtCore import Qt, QRectF, QPointF, pyqtSignal, QMimeData
 
-# --- Tento slovník bude načten ze serveru ---
+# --- Globální proměnné ---
 NODE_DEFINITIONS = {}
 SERVER_URL = "http://localhost:5001"
 
 # --- Grafické prvky ---
 
 class Socket(QGraphicsObject):
-    """ Grafický prvek pro vstupní/výstupní port bloku """
     def __init__(self, parent, name, is_output=False):
         super().__init__(parent)
         self.parent_block, self.socket_name, self.is_output = parent, name, is_output
         self.radius = 6
         self.setAcceptHoverEvents(True)
         self.connections = []
-
-    def boundingRect(self):
-        return QRectF(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
-
+    def boundingRect(self): return QRectF(-self.radius, -self.radius, 2 * self.radius, 2 * self.radius)
     def paint(self, painter, option, widget=None):
-        painter.setBrush(QBrush(QColor("#ecf0f1")))
-        painter.setPen(QPen(QColor("#95a5a6"), 1))
+        painter.setBrush(QBrush(QColor("#ecf0f1"))); painter.setPen(QPen(QColor("#95a5a6"), 1))
         painter.drawEllipse(int(-self.radius), int(-self.radius), int(2 * self.radius), int(2 * self.radius))
-
-    def get_scene_pos(self):
-        return self.mapToScene(0, 0)
-        
-    def add_connection(self, conn):
-        self.connections.append(conn)
-        
+    def get_scene_pos(self): return self.mapToScene(0, 0)
+    def add_connection(self, conn): self.connections.append(conn)
     def remove_connection(self, conn):
-        if conn in self.connections:
-            self.connections.remove(conn)
+        if conn in self.connections: self.connections.remove(conn)
+
+    def mouseDoubleClickEvent(self, event):
+        """ Při dvojkliku na socket rozpojí všechna jeho spojení. """
+        for conn in list(self.connections):
+            conn.start_socket.remove_connection(conn)
+            if conn.end_socket:
+                conn.end_socket.remove_connection(conn)
+            
+            if self.scene():
+                self.scene().removeItem(conn)
+        
+        event.accept()
+        super().mouseDoubleClickEvent(event)
 
 class Connection(QGraphicsPathItem):
-    """ Grafická reprezentace spojení mezi dvěma sockety """
     def __init__(self, start_socket, end_socket=None):
         super().__init__()
         self.start_socket, self.end_socket = start_socket, end_socket
@@ -50,7 +51,6 @@ class Connection(QGraphicsPathItem):
         if self.end_socket: self.end_socket.add_connection(self)
         self.setPen(QPen(QColor("#ecf0f1"), 2)); self.setZValue(-1)
         self.last_end_pos = start_socket.get_scene_pos() 
-
     def update_path(self, end_pos=None):
         if end_pos: self.last_end_pos = end_pos
         p1 = self.start_socket.get_scene_pos()
@@ -59,53 +59,44 @@ class Connection(QGraphicsPathItem):
         dx = p2.x() - p1.x()
         ctrl1, ctrl2 = QPointF(p1.x() + dx * 0.5, p1.y()), QPointF(p1.x() + dx * 0.5, p2.y())
         path.cubicTo(ctrl1, ctrl2, p2); self.setPath(path)
-
     def set_end_socket(self, socket):
         self.end_socket = socket
         if self.end_socket: self.end_socket.add_connection(self)
 
 class Block(QGraphicsObject):
-    """ Grafická reprezentace funkčního bloku """
     doubleClicked = pyqtSignal(object)
     
     def __init__(self, block_type, data=None):
         super().__init__()
         self.block_type, self.data, self.def_ = block_type, data or {}, NODE_DEFINITIONS[block_type]
         self.width, self.height = 180, 40
+        self.topic_overrides = {}
         self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsScenePositionChanges)
-        
         self.inputs, self.outputs, y_pos_in, y_pos_out = [], [], 35, 35
         for name in self.def_['inputs']:
             self.inputs.append(Socket(self, name, is_output=False)); self.inputs[-1].setPos(0, y_pos_in); y_pos_in += 20
         for name in self.def_['outputs']:
             self.outputs.append(Socket(self, name, is_output=True)); self.outputs[-1].setPos(self.width, y_pos_out); y_pos_out += 20
-        
         self.height = max(y_pos_in - 15, y_pos_out - 15, self.height)
         self.update_id_display()
 
-    def boundingRect(self):
-        return QRectF(0, 0, self.width, self.height)
+    def boundingRect(self): return QRectF(0, 0, self.width, self.height)
 
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.Antialiasing)
-        
         path_body = QPainterPath(); path_body.addRoundedRect(0, 0, self.width, self.height, 8, 8)
         painter.setBrush(QBrush(QColor(self.def_.get('color', '#34495e'))))
         pen = QPen(QColor(Qt.black), 1.5)
         if self.isSelected():
             pen.setColor(QColor("#3498db")); pen.setWidth(3)
         painter.setPen(pen); painter.drawPath(path_body)
-
         path_header = QPainterPath(); path_header.addRoundedRect(0, 0, self.width, 25, 8, 8)
         path_header.addRect(0, 15, self.width, 10) 
         painter.setBrush(QBrush(QColor(0, 0, 0, 50))); painter.setPen(Qt.NoPen); painter.drawPath(path_header)
-        
         painter.setPen(Qt.white); painter.setFont(QFont("Arial", 9, QFont.Bold))
         painter.drawText(QRectF(0, 0, self.width, 25), Qt.AlignCenter, self.def_['title'])
-        
         painter.setFont(QFont("Arial", 8, QFont.Normal)); painter.setPen(QColor("#dddddd"))
         painter.drawText(QRectF(5, 28, self.width - 10, 15), Qt.AlignLeft, self.id_text)
-        
         painter.setFont(QFont("Arial", 8, QFont.Normal)); painter.setPen(Qt.white)
         for s in self.inputs:
             painter.drawText(QRectF(s.pos().x() + s.radius + 5, s.pos().y() - 10, self.width/2 - 20, 20), Qt.AlignLeft | Qt.AlignVCenter, s.socket_name)
@@ -125,20 +116,17 @@ class Block(QGraphicsObject):
         self.id_text = f"ID: {self.data.get('id', '(nenastaveno)')}"; self.update()
 
 class NodeScene(QGraphicsScene):
-    """ Scéna pro správu bloků a spojení - s opravou pro spojování """
     def __init__(self, parent=None):
         super().__init__(parent); self.temp_connection = None
         
     def mousePressEvent(self, event):
+        super().mousePressEvent(event)
         item = self.itemAt(event.scenePos(), self.views()[0].transform())
         if event.button() == Qt.LeftButton and isinstance(item, Socket) and item.is_output:
             self.temp_connection = Connection(item); self.addItem(self.temp_connection)
-        else:
-            super().mousePressEvent(event)
             
     def mouseMoveEvent(self, event):
-        if self.temp_connection:
-            self.temp_connection.update_path(event.scenePos())
+        if self.temp_connection: self.temp_connection.update_path(event.scenePos())
         super().mouseMoveEvent(event)
         
     def mouseReleaseEvent(self, event):
@@ -176,8 +164,7 @@ class NodeView(QGraphicsView):
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat('text/plain'): event.acceptProposedAction()
         
-    def dragMoveEvent(self, event):
-        event.acceptProposedAction()
+    def dragMoveEvent(self, event): event.acceptProposedAction()
         
     def dropEvent(self, event):
         block_type = event.mimeData().text()
@@ -214,36 +201,63 @@ class PropertiesPanel(QWidget):
         if old_layout is not None: QWidget().setLayout(old_layout)
             
         form_layout = QFormLayout(); self.form_widget.setLayout(form_layout)
+        
         title = QLabel(f"<b>Nastavení: {block.def_['title']}</b>"); form_layout.addRow(title)
         
         id_edit = QLineEdit(block.data.get('id', ''))
         id_edit.setPlaceholderText(f"{block.block_type.lower()}_{block.scenePos().toPoint().x()}")
-        id_edit.textChanged.connect(lambda text: self.update_data('id', text)); form_layout.addRow("ID bloku:", id_edit)
+        id_edit.textChanged.connect(lambda text, b=block: self.update_data(b, 'id', text))
+        form_layout.addRow("ID bloku:", id_edit)
 
         for field in block.def_['fields']:
             val = block.data.get(field['name'])
-            
+            widget = None
             if field['type'] == 'int':
                 widget = QSpinBox(); widget.setRange(-10000, 10000)
                 widget.setValue(int(val) if val is not None and str(val).lstrip('-').isdigit() else 0)
-                widget.valueChanged.connect(lambda v, n=field['name']: self.update_data(n, v))
+                widget.valueChanged.connect(lambda v, b=block, n=field['name']: self.update_data(b, n, v))
             elif field['type'] == 'bool':
-                widget = QCheckBox()
-                widget.setChecked(bool(val) if val is not None else False)
-                widget.stateChanged.connect(lambda state, n=field['name']: self.update_data(n, bool(state)))
+                widget = QCheckBox(); widget.setChecked(bool(val) if val is not None else False)
+                widget.stateChanged.connect(lambda state, b=block, n=field['name']: self.update_data(b, n, bool(state)))
             else: 
                 widget = QLineEdit(str(val) if val is not None else ""); widget.setPlaceholderText(field.get('placeholder', ''))
-                widget.textChanged.connect(lambda text, n=field['name']: self.update_data(n, text))
-            form_layout.addRow(field['label'] + ":", widget)
+                widget.textChanged.connect(lambda text, b=block, n=field['name']: self.update_data(b, n, text))
+            if widget: form_layout.addRow(field['label'] + ":", widget)
 
-    def update_data(self, key, value):
-        if self.current_block:
-            field_def = next((f for f in self.current_block.def_['fields'] if f['name'] == key), None)
+        if block.inputs:
+            form_layout.addRow(QLabel(" ")); form_layout.addRow(QLabel("<b>Vstupy (napojeno na):</b>"))
+            for socket in block.inputs:
+                topic_label = QLabel("<i>(nenapojeno)</i>"); topic_label.setStyleSheet("color: #95a5a6;")
+                if socket.connections:
+                    source_socket = socket.connections[0].start_socket; source_block = source_socket.parent_block
+                    source_id = source_block.data.get('id', '(bez ID)'); source_output = source_socket.socket_name
+                    topic_label.setText(f"<b>{source_id}</b> -> {source_output}"); topic_label.setStyleSheet("color: white;")
+                form_layout.addRow(f"{socket.socket_name}:", topic_label)
+        
+        if block.outputs:
+            form_layout.addRow(QLabel(" ")); form_layout.addRow(QLabel("<b>Výstupy (MQTT Témata):</b>"))
+            for socket in block.outputs:
+                default_id = block.data.get('id', f"{block.block_type.lower()}_{block.scenePos().toPoint().x()}")
+                default_topic = f"smarthome/{default_id}/{socket.socket_name}"
+                
+                topic_edit = QLineEdit(block.topic_overrides.get(socket.socket_name, ""))
+                topic_edit.setPlaceholderText(default_topic)
+                topic_edit.textChanged.connect(lambda text, b=block, n=socket.socket_name: self.update_topic_override(b, n, text))
+                form_layout.addRow(f"{socket.socket_name}:", topic_edit)
+
+    def update_data(self, block, key, value):
+        if block:
+            field_def = next((f for f in block.def_['fields'] if f['name'] == key), None)
             if field_def and field_def['type'] == 'float':
                 try: value = float(value)
                 except (ValueError, TypeError): pass
-            self.current_block.data[key] = value
-            if key == 'id': self.current_block.update_id_display()
+            block.data[key] = value
+            if key == 'id':
+                block.update_id_display(); self.show_properties(block)
+    
+    def update_topic_override(self, block, output_name, text):
+        if block:
+            block.topic_overrides[output_name] = text
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -259,7 +273,7 @@ class MainWindow(QMainWindow):
         self.scene = NodeScene(); self.view = NodeView(self.scene); self.properties_panel = PropertiesPanel()
         
         splitter = QSplitter(Qt.Horizontal); splitter.addWidget(self.block_list); splitter.addWidget(self.view); splitter.addWidget(self.properties_panel)
-        splitter.setSizes([200, 800, 250]); main_layout.addWidget(splitter)
+        splitter.setSizes([200, 800, 300]); main_layout.addWidget(splitter)
         
         self.scene.selectionChanged.connect(self.on_selection_changed)
         self.load_definitions()
@@ -316,14 +330,21 @@ class MainWindow(QMainWindow):
             if config_data: block_dict["config"] = config_data
             
             inputs, outputs = {}, {}
-            for socket in block_item.outputs: outputs[socket.socket_name] = f"smarthome/{id_}/{socket.socket_name}"
+            for socket in block_item.outputs:
+                override = block_item.topic_overrides.get(socket.socket_name, "").strip()
+                outputs[socket.socket_name] = override if override else f"smarthome/{id_}/{socket.socket_name}"
+
             for socket in block_item.inputs:
-                for conn in socket.connections:
-                    if conn.end_socket == socket:
-                        source_socket, source_block = conn.start_socket, conn.start_socket.parent_block
-                        source_id_val = source_block.data.get('id', '').strip()
-                        if not source_id_val: source_id_val = f"{source_block.block_type.lower()}_{id_map[source_block]+1}"
-                        inputs[socket.socket_name] = {"source_block_id": source_id_val, "source_output": source_socket.socket_name}
+                if socket.connections:
+                    conn = socket.connections[0]
+                    source_socket, source_block = conn.start_socket, conn.start_socket.parent_block
+                    source_id_val = source_block.data.get('id', '').strip()
+                    if not source_id_val: source_id_val = f"{source_block.block_type.lower()}_{id_map[source_block]+1}"
+                    
+                    override = source_block.topic_overrides.get(source_socket.socket_name, "").strip()
+                    source_topic = override if override else f"smarthome/{source_id_val}/{source_socket.socket_name}"
+                    
+                    inputs[socket.socket_name] = {"topic": source_topic}
             
             if inputs: block_dict["inputs"] = inputs
             if outputs: block_dict["outputs"] = outputs

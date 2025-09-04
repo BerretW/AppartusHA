@@ -1,5 +1,13 @@
--- lua_blocks/digital_output_block.lua
--- Tento blok reprezentuje fyzický digitální výstup (např. GPIO pin).
+--[[
+@blockinfo
+title = Fyzický Výstup
+color = #c0392b
+inputs = set_state
+outputs = 
+fields = 
+    output_pin; Výstupní Pin; int; 12
+@endblockinfo
+]]--
 
 local M = {}
 
@@ -13,7 +21,6 @@ function M.init(id, config, inputs, outputs)
 end
 
 function M.on_input(input_name, value)
-    -- Očekáváme boolean hodnotu (true/false) na vstupu 'set_state'
     if input_name == "set_state" then
         local state_bool = (value == true or value == "true")
         py_log_from_lua("Digital Output '" .. block_id_g .. "' setting pin " .. block_config_g.output_pin .. " to " .. tostring(state_bool))

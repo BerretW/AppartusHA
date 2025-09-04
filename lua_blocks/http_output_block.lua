@@ -1,5 +1,16 @@
--- lua_blocks/http_output_block.lua
--- Tento blok pošle HTTP požadavek na základě přijatého vstupu.
+--[[
+@blockinfo
+title = HTTP Výstup
+color = #d35400
+inputs = set_state
+outputs = 
+fields = 
+    url; Cílová URL; str; http://192.168.1.50/relay/0
+    method; Metoda (GET/POST); str; GET
+    payload_on; Payload pro ZAPNUTO; str; {"turn":"on"}
+    payload_off; Payload pro VYPNUTO; str; {"turn":"off"}
+@endblockinfo
+]]--
 
 local M = {}
 
@@ -18,14 +29,12 @@ function M.on_input(input_name, value)
         local payload = ""
         
         if state_bool then
-            payload = block_config_g.payload_on
+            payload = block_config_g.payload_on or ""
         else
-            payload = block_config_g.payload_off
+            payload = block_config_g.payload_off or ""
         end
 
         py_log_from_lua("HTTP Output '" .. block_id_g .. "' sending request. Payload: " .. payload)
-        
-        -- Voláme novou Python funkci, která umí posílat HTTP požadavky
         py_send_http_request(block_id_g, block_config_g.method, block_config_g.url, payload)
     end
 end

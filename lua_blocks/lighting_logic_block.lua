@@ -2,7 +2,7 @@
 @blockinfo
 title = Logika: Osvětlení
 color = #f1c40f
-inputs = power_button, motion_sensor, daylight_sensor, master_switch
+inputs = power_button, motion_sensor, daylight_sensor, master_switch, temperature_check
 outputs = state, brightness
 fields = 
     default_on; Výchozí stav ZAPNUTO; bool
@@ -19,19 +19,13 @@ local brightness = 100
 
 function M.init(id, config, inputs, outputs)
     block_id_g = id
-    config_g = config -- Uložíme si celou config tabulku
+    config_g = config
     
-    --[[
-        Bezpečný přístup k hodnotám.
-        'config_g.default_on' může být nil. Pokud je, 'or false' zajistí,
-        že 'is_on' bude mít vždy platnou hodnotu.
-    ]]--
-    is_on = (config_g.default_on == true) -- Explicitní kontrola na true
+    is_on = (config_g.default_on == true)
     brightness = config_g.default_brightness or 100
 
     py_log_from_lua("Lighting Logic block '" .. id .. "' initialized. State: " .. tostring(is_on))
     
-    -- Publikujeme počáteční stav
     py_set_mqtt_output(block_id_g, "state", is_on)
     py_set_mqtt_output(block_id_g, "brightness", brightness)
 end

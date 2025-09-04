@@ -1,3 +1,14 @@
+--[[
+@blockinfo
+title = Digitální Vstup
+color = #27ae60
+inputs = 
+outputs = state, double_click
+fields = 
+    input_pin; Hardware Pin; int; 5
+@endblockinfo
+]]--
+
 local M = {}
 
 local block_id_g

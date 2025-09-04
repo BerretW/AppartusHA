@@ -1,3 +1,14 @@
+--[[
+@blockinfo
+title = Termostat
+color = #e67e22
+inputs = current_temperature
+outputs = heating_state
+fields = 
+    set_point; Cílová teplota; float; 21.5
+@endblockinfo
+]]--
+
 local M = {}
 
 local block_id_g
@@ -15,7 +26,6 @@ function M.on_input(input_name, value)
         local temp = tonumber(value)
         if not temp then return end
 
-        py_log_from_lua("Thermostat received temperature: " .. temp .. " C.")
         local should_be_on = (temp < set_point)
 
         if should_be_on ~= heating_on then

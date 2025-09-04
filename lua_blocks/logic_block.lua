@@ -1,3 +1,14 @@
+--[[
+@blockinfo
+title = Logika: Hlavní vypínač
+color = #8e44ad
+inputs = toggle
+outputs = state
+fields = 
+    default_state; Výchozí stav ZAPNUTO; bool
+@endblockinfo
+]]--
+
 local M = {}
 
 local block_id_g
@@ -5,7 +16,7 @@ local is_on = false
 
 function M.init(id, config, inputs, outputs)
     block_id_g = id
-    is_on = config.default_state or false
+    is_on = (config.default_state == true)
     py_log_from_lua("Logic block '" .. block_id_g .. "' initialized with state: " .. tostring(is_on))
     py_set_mqtt_output(block_id_g, "state", is_on)
 end
