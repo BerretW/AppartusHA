@@ -53,6 +53,17 @@
             }
         },
         {
+            "id": "http_in_button",
+            "type": "HttpInput",
+            "lua_script": "http_input_block.lua",
+            "config": {
+                "endpoint": "/button/bedroom/main"
+            },
+            "outputs": {
+                "state": "smarthome/button/bedroom/main/state"
+            }
+        },
+        {
             "id": "thermostat_living_room",
             "type": "Thermostat",
             "lua_script": "thermostat_block.lua",
@@ -65,6 +76,72 @@
             "outputs": {
                 "heating_state": "smarthome/thermostat/living_room/state"
             }
+        },
+                {
+            "id": "button_bedroom_main",
+            "type": "DigitalInput",
+            "lua_script": "digital_input_block.lua",
+            "config": {
+                "input_pin": 5
+            },
+            "outputs": {
+                "state": "smarthome/button/bedroom/main/state"
+            }
+        },
+        {
+            "id": "logic_bedroom_lights_all",
+            "type": "LogicPassthrough",
+            "lua_script": "logic_passthrough_block.lua",
+            "inputs": {
+                "trigger": {"source_block_id": "http_in_button", "source_output": "state"}
+            },
+            "outputs": {
+                "light1_cmd": "smarthome/logic/bedroom/light1/cmd",
+                "light2_cmd": "smarthome/logic/bedroom/light2/cmd",
+                "light3_cmd": "smarthome/logic/bedroom/light3/cmd",
+                "light4_cmd": "smarthome/logic/bedroom/light4/cmd",
+                "light5_cmd": "smarthome/logic/bedroom/light5/cmd"
+            }
+        },
+        {
+            "id": "light_bedroom_ceiling_1",
+            "type": "Lighting",
+            "lua_script": "lighting_block.lua",
+            "config": { "output_pin": 10 },
+            "inputs": { "power_button": {"source_block_id": "logic_bedroom_lights_all", "source_output": "light1_cmd"} },
+            "outputs": { "status": "smarthome/light/bedroom/1/status" }
+        },
+        {
+            "id": "light_bedroom_ceiling_2",
+            "type": "Lighting",
+            "lua_script": "lighting_block.lua",
+            "config": { "output_pin": 11 },
+            "inputs": { "power_button": {"source_block_id": "logic_bedroom_lights_all", "source_output": "light2_cmd"} },
+            "outputs": { "status": "smarthome/light/bedroom/2/status" }
+        },
+        {
+            "id": "light_bedroom_ceiling_3",
+            "type": "Lighting",
+            "lua_script": "lighting_block.lua",
+            "config": { "output_pin": 12 },
+            "inputs": { "power_button": {"source_block_id": "logic_bedroom_lights_all", "source_output": "light3_cmd"} },
+            "outputs": { "status": "smarthome/light/bedroom/3/status" }
+        },
+        {
+            "id": "light_bedroom_ceiling_4",
+            "type": "Lighting",
+            "lua_script": "lighting_block.lua",
+            "config": { "output_pin": 13 },
+            "inputs": { "power_button": {"source_block_id": "logic_bedroom_lights_all", "source_output": "light4_cmd"} },
+            "outputs": { "status": "smarthome/light/bedroom/4/status" }
+        },
+        {
+            "id": "light_bedroom_ceiling_5",
+            "type": "Lighting",
+            "lua_script": "lighting_block.lua",
+            "config": { "output_pin": 14 },
+            "inputs": { "power_button": {"source_block_id": "logic_bedroom_lights_all", "source_output": "light5_cmd"} },
+            "outputs": { "status": "smarthome/light/bedroom/5/status" }
         }
     ]
 }

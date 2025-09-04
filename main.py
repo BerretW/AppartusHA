@@ -54,7 +54,8 @@ def main():
     mqtt_client.connect()
 
     # 4. Inicializace správce bloků, který je srdcem logiky
-    block_manager = BlockManager(mqtt_client, hw_interface, LUA_BLOCK_DIR)
+    block_manager = BlockManager(mqtt_client, hw_interface, state_cache, LUA_BLOCK_DIR)
+    
     block_manager.load_blocks_from_config(config)
 
     # 5. Spuštění webového serveru v samostatném vlákně

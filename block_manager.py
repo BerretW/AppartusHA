@@ -8,49 +8,31 @@ logger = logging.getLogger(__name__)
 
 class BlockManager:
     def __init__(self, mqtt_client, hardware_interface, state_cache, lua_block_dir="lua_blocks"):
-        """
-        Inicializuje správce bloků.
-
-        Args:
-            mqtt_client: Instance MQTT klienta.
-            hardware_interface: Instance hardwarového rozhraní.
-            state_cache: Instance sdílené cache pro ukládání stavů MQTT témat.
-            lua_block_dir: Cesta ke složce s Lua skripty.
-        """
         self.mqtt_client = mqtt_client
         self.hardware_interface = hardware_interface
-        self.lua_block_dir = lua_block_dir
         self.state_cache = state_cache
-        self.blocks = {}
+        self.lua_block_dir = lua_block_dir
         self.block_instances = {}
-        self.topic_map = {} # Pro rychlé mapování MQTT témat na bloky
-        self.last_hw_states = {} # Pro detekci změn na hardwarových vstupech
+        self.topic_map = {}
+        self.last_hw_states = {}
         self.lua_runtime = lupa.LuaRuntime(unpack_returned_tuples=True)
 
-        # Zpřístupnění Python funkcí pro volání z Lua skriptů
-        self.lua_runtime.globals().set_mqtt_output = self._lua_set_mqtt_output
-        self.lua_runtime.globals().get_hardware_input = self._lua_get_hardware_input
-        self.lua_runtime.globals().set_hardware_output = self._lua_set_hardware_output
-        self.lua_runtime.globals().log_from_lua = lambda msg: logger.info(f"[LUA_BLOCK] {msg}")
+        # Globálně zpřístupníme Python funkce, které budou Lua bloky volat.
+        # V Lua budou dostupné pod těmito jmény.
+        self.lua_runtime.globals().py_set_mqtt_output = self._lua_set_mqtt_output
+        self.lua_runtime.globals().py_get_hardware_input = self._lua_get_hardware_input
+        self.lua_runtime.globals().py_set_hardware_output = self._lua_set_hardware_output
+        self.lua_runtime.globals().py_log_from_lua = lambda msg: logger.info(f"[LUA_BLOCK] {msg}")
 
     def _lua_set_mqtt_output(self, block_id, output_name, value):
         """Voláno z Lua. Publikuje zprávu na MQTT a aktualizuje interní cache."""
-        
-        # --- LADICÍ VÝPIS 1 ---
-        print(f"DEBUG: _lua_set_mqtt_output voláno pro blok '{block_id}' s hodnotou '{value}'. Pokus o zápis do cache.")
-        
         block_info = self.block_instances.get(block_id)
         if block_info and output_name in block_info['outputs']:
             topic = block_info['outputs'][output_name]
-            
-            # --- LADICÍ VÝPIS 2 ---
-            print(f"DEBUG: Aktualizuji cache pro téma '{topic}' s hodnotou '{value}'")
-            
             self.state_cache.set(topic, str(value))
             self.mqtt_client.publish(topic, value)
         else:
-            # --- LADICÍ VÝPIS 3 ---
-            print(f"DEBUG: CHYBA - Nepodařilo se najít výstup '{output_name}' pro blok '{block_id}'")
+            logger.warning(f"Lua block {block_id} tried to publish on unknown output '{output_name}'")
 
     def _lua_get_hardware_input(self, block_id, input_type, pin_or_addr):
         """Voláno z Lua. Čte hodnotu z hardwarového rozhraní."""
@@ -72,24 +54,20 @@ class BlockManager:
             logger.warning(f"Lua block {block_id} requested unknown hardware output type: {output_type}")
     
     def _call_lua_input_handler(self, block_id, input_name, value):
-        """
-        Interní metoda pro bezpečné zavolání funkce 'on_input' v Lua skriptu bloku.
-        Používá se pro předání dat z MQTT nebo přímo z HTTP serveru.
-        """
+        """Interní metoda pro bezpečné zavolání funkce 'on_input' v Lua modulu bloku."""
         block_instance = self.block_instances.get(block_id)
-        if block_instance and hasattr(block_instance['lua_env'], 'on_input'):
+        if block_instance and 'on_input' in block_instance['lua_module']:
             try:
-                # Pokus o konverzi běžných stringových reprezentací boolean hodnot
                 if isinstance(value, str):
                     if value.lower() == 'true': value = True
                     elif value.lower() == 'false': value = False
-                block_instance['lua_env'].on_input(input_name, value)
+                block_instance['lua_module'].on_input(input_name, value)
             except Exception as e:
                 logger.error(f"Error calling on_input for block {block_id}, input {input_name}: {e}")
 
     def load_blocks_from_config(self, config_data):
         """Načte a inicializuje všechny bloky definované v konfiguračním objektu."""
-        # První průchod: vytvoříme instance všech bloků a jejich Lua prostředí
+        # Vytvoříme instance všech bloků a jejich Lua modulů
         for block_data in config_data.get("blocks", []):
             block_id = block_data['id']
             lua_script_file = block_data.get('lua_script')
@@ -107,26 +85,32 @@ class BlockManager:
                 with open(lua_path, 'r', encoding='utf-8') as f:
                     lua_code = f.read()
 
-                block_lua_env = self.lua_runtime.execute(lua_code)
+                # Spustíme skript a očekáváme, že na konci vrátí tabulku (modul)
+                lua_module = self.lua_runtime.execute(lua_code)
+                
+                if lua_module is None:
+                    logger.error(f"Lua script '{lua_script_file}' for block '{block_id}' did not return a module table. Make sure the script ends with 'return M'.")
+                    continue
+
                 self.block_instances[block_id] = {
-                    'type': block_data.get('type'),
-                    'lua_env': block_lua_env,
+                    'lua_module': lua_module, # Uložíme si vrácený Lua objekt
                     'config': block_data.get('config', {}),
                     'inputs': block_data.get('inputs', {}),
                     'outputs': block_data.get('outputs', {})
                 }
             except Exception as e:
-                logger.error(f"Error creating Lua environment for block {block_id}: {e}")
+                logger.error(f"Error executing Lua script for block {block_id}: {e}", exc_info=True)
 
-        # Druhý průchod: zavoláme 'init' funkce a propojíme vstupy/výstupy přes MQTT
+        # Provedeme inicializaci a propojení bloků
         for block_id, block_info in self.block_instances.items():
             try:
-                if hasattr(block_info['lua_env'], 'init'):
-                    block_info['lua_env'].init(block_id, block_info['config'], block_info['inputs'], block_info['outputs'])
+                # Zkontrolujeme, zda má modul 'init' funkci a zavoláme ji
+                if 'init' in block_info['lua_module']:
+                    block_info['lua_module'].init(block_id, block_info['config'], block_info['inputs'], block_info['outputs'])
                 
                 logger.info(f"Loaded and initialized Lua block '{block_id}'")
 
-                # Propojíme vstupy bloku s výstupy jiných bloků
+                # Propojíme vstupy bloku s výstupy jiných bloků přes MQTT
                 for input_name, input_info in block_info['inputs'].items():
                     if "source_block_id" in input_info:
                         source_block = self.block_instances.get(input_info["source_block_id"])
@@ -140,7 +124,7 @@ class BlockManager:
                             logger.warning(f"Input '{input_name}' for block {block_id} refers to non-existent source.")
             
             except Exception as e:
-                logger.error(f"Error initializing or wiring Lua script for block {block_id}: {e}")
+                logger.error(f"Error initializing Lua block {block_id}: {e}", exc_info=True)
 
     def _handle_mqtt_message_for_block(self, topic, payload):
         """Callback pro MQTT. Najde správný blok a předá mu zprávu."""
@@ -149,10 +133,7 @@ class BlockManager:
                 self._call_lua_input_handler(target['block_id'], target['input_name'], payload)
 
     def process_block_logic(self):
-        """
-        Hlavní logická smyčka, volaná periodicky. Zpracovává hardwarové vstupy
-        a volá 'run' funkce v blocích.
-        """
+        """Hlavní logická smyčka, volaná periodicky."""
         for block_id, block_info in self.block_instances.items():
             # Zpracování hardwarových vstupů s detekcí změny
             for input_name, input_def in block_info['inputs'].items():
@@ -168,14 +149,14 @@ class BlockManager:
                         
                         if current_value != last_value:
                             self.last_hw_states[state_key] = current_value
-                            if hasattr(block_info['lua_env'], 'on_hardware_input_change'):
-                                block_info['lua_env'].on_hardware_input_change(input_name, current_value)
+                            if 'on_hardware_input_change' in block_info['lua_module']:
+                                block_info['lua_module'].on_hardware_input_change(input_name, current_value)
                             else:
                                 self._call_lua_input_handler(block_id, input_name, current_value)
 
-            # Volání periodické 'run' funkce v Lua skriptu, pokud existuje
-            if hasattr(block_info['lua_env'], 'run'):
+            # Volání periodické 'run' funkce v Lua modulu, pokud existuje
+            if 'run' in block_info['lua_module']:
                 try:
-                    block_info['lua_env'].run()
+                    block_info['lua_module'].run()
                 except Exception as e:
                     logger.error(f"Error calling run for block {block_id}: {e}")
