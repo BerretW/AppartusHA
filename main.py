@@ -61,7 +61,7 @@ def main():
     # 5. Spuštění webového serveru v samostatném vlákně
     # Předáme mu správce bloků a konfiguraci, aby mohl dynamicky vytvořit HTTP vstupy (POST endpointy)
     # Také mu předáme cache pro monitorovací endpointy (GET)
-    run_web_server(block_manager, config.get("blocks", []), state_cache)
+    run_web_server(block_manager, config.get("blocks", []), state_cache, LUA_BLOCK_DIR)
 
     # 6. Hlavní smyčka aplikace
     # Tato smyčka se neustále opakuje a volá logiku bloků (např. pro polling hardwaru)

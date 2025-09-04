@@ -2,6 +2,7 @@ import lupa
 import os
 import json
 import logging
+import requests # Potřebné pro HTTP požadavky
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,11 +19,11 @@ class BlockManager:
         self.lua_runtime = lupa.LuaRuntime(unpack_returned_tuples=True)
 
         # Globálně zpřístupníme Python funkce, které budou Lua bloky volat.
-        # V Lua budou dostupné pod těmito jmény.
         self.lua_runtime.globals().py_set_mqtt_output = self._lua_set_mqtt_output
         self.lua_runtime.globals().py_get_hardware_input = self._lua_get_hardware_input
         self.lua_runtime.globals().py_set_hardware_output = self._lua_set_hardware_output
         self.lua_runtime.globals().py_log_from_lua = lambda msg: logger.info(f"[LUA_BLOCK] {msg}")
+        self.lua_runtime.globals().py_send_http_request = self._lua_send_http_request # Nová funkce
 
     def _lua_set_mqtt_output(self, block_id, output_name, value):
         """Voláno z Lua. Publikuje zprávu na MQTT a aktualizuje interní cache."""
@@ -53,6 +54,27 @@ class BlockManager:
         else:
             logger.warning(f"Lua block {block_id} requested unknown hardware output type: {output_type}")
     
+    def _lua_send_http_request(self, block_id, method, url, payload):
+        """Voláno z Lua. Odešle HTTP požadavek."""
+        try:
+            method = method.upper()
+            headers = {'Content-Type': 'application/json'}
+
+            if method == 'POST':
+                response = requests.post(url, data=payload, headers=headers, timeout=5)
+            elif method == 'GET':
+                # GET požadavky obvykle nemají payload, ale některé API ho podporují
+                response = requests.get(url, data=payload, headers=headers, timeout=5)
+            else:
+                logger.warning(f"Unsupported HTTP method '{method}' for block {block_id}")
+                return
+
+            response.raise_for_status() # Vyvolá chybu pro status kódy 4xx nebo 5xx
+            logger.info(f"HTTP request from block {block_id} to {url} successful.")
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"HTTP request from block {block_id} to '{url}' failed: {e}")
+
     def _call_lua_input_handler(self, block_id, input_name, value):
         """Interní metoda pro bezpečné zavolání funkce 'on_input' v Lua modulu bloku."""
         block_instance = self.block_instances.get(block_id)
@@ -67,7 +89,7 @@ class BlockManager:
 
     def load_blocks_from_config(self, config_data):
         """Načte a inicializuje všechny bloky definované v konfiguračním objektu."""
-        # Vytvoříme instance všech bloků a jejich Lua modulů
+        # ... (Tato metoda zůstává beze změny) ...
         for block_data in config_data.get("blocks", []):
             block_id = block_data['id']
             lua_script_file = block_data.get('lua_script')
@@ -85,7 +107,6 @@ class BlockManager:
                 with open(lua_path, 'r', encoding='utf-8') as f:
                     lua_code = f.read()
 
-                # Spustíme skript a očekáváme, že na konci vrátí tabulku (modul)
                 lua_module = self.lua_runtime.execute(lua_code)
                 
                 if lua_module is None:
@@ -93,7 +114,7 @@ class BlockManager:
                     continue
 
                 self.block_instances[block_id] = {
-                    'lua_module': lua_module, # Uložíme si vrácený Lua objekt
+                    'lua_module': lua_module,
                     'config': block_data.get('config', {}),
                     'inputs': block_data.get('inputs', {}),
                     'outputs': block_data.get('outputs', {})
@@ -101,16 +122,13 @@ class BlockManager:
             except Exception as e:
                 logger.error(f"Error executing Lua script for block {block_id}: {e}", exc_info=True)
 
-        # Provedeme inicializaci a propojení bloků
         for block_id, block_info in self.block_instances.items():
             try:
-                # Zkontrolujeme, zda má modul 'init' funkci a zavoláme ji
                 if 'init' in block_info['lua_module']:
                     block_info['lua_module'].init(block_id, block_info['config'], block_info['inputs'], block_info['outputs'])
                 
                 logger.info(f"Loaded and initialized Lua block '{block_id}'")
 
-                # Propojíme vstupy bloku s výstupy jiných bloků přes MQTT
                 for input_name, input_info in block_info['inputs'].items():
                     if "source_block_id" in input_info:
                         source_block = self.block_instances.get(input_info["source_block_id"])
@@ -134,8 +152,8 @@ class BlockManager:
 
     def process_block_logic(self):
         """Hlavní logická smyčka, volaná periodicky."""
+        # ... (Tato metoda zůstává beze změny) ...
         for block_id, block_info in self.block_instances.items():
-            # Zpracování hardwarových vstupů s detekcí změny
             for input_name, input_def in block_info['inputs'].items():
                 if "hardware_input" in input_def:
                     hw_type = input_def["hardware_input"]["type"]
@@ -154,7 +172,6 @@ class BlockManager:
                             else:
                                 self._call_lua_input_handler(block_id, input_name, current_value)
 
-            # Volání periodické 'run' funkce v Lua modulu, pokud existuje
             if 'run' in block_info['lua_module']:
                 try:
                     block_info['lua_module'].run()

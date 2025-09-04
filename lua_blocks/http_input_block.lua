@@ -1,3 +1,16 @@
+--[[
+@blockinfo
+title = HTTP Vstup
+color = #2980b9
+inputs = 
+outputs = value
+fields = 
+    endpoint; Endpoint; str; /pocasi/teplota
+@endblockinfo
+]]--
+
+
+
 local M = {} -- Vytvoříme tabulku pro náš modul
 
 local block_id_g

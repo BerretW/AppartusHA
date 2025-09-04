@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vizuální Konfigurátor pro AppartusHA</title>
+    <!-- Import knihovny Drawflow -->
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow/dist/drawflow.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-color: #2d3748;
+            --sidebar-bg: #232a39;
+            --node-bg: #4a5568;
+            --node-border: #718096;
+            --text-color: #e2e8f0;
+            --accent-color: #4299e1;
+            --input-bg: #2d3748;
+            --header-bg: #1a202c;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        header {
+            background-color: var(--header-bg);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--accent-color);
+            z-index: 5;
+        }
+        header h1 { margin: 0; font-size: 1.5rem; }
+        button {
+            background-color: var(--accent-color);
+            color: white; border: none; padding: 0.5rem 1rem;
+            border-radius: 5px; cursor: pointer; font-size: 1rem;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: #2b6cb0; }
+        .container { display: flex; flex-grow: 1; }
+        
+        /* Levý panel s bloky */
+        .col-left {
+            background: var(--sidebar-bg);
+            border-right: 1px solid #444;
+            padding: 10px;
+            width: 200px;
+            overflow-y: auto;
+        }
+        .col-left ul { padding: 0; margin: 0; }
+        .col-left ul li {
+            background: var(--node-bg);
+            padding: 10px; margin-bottom: 10px;
+            border-radius: 5px; cursor: grab;
+            border: 1px solid var(--node-border);
+            text-align: center;
+        }
+
+        /* Pravý panel pro nastavení */
+        .col-right {
+            background: var(--sidebar-bg);
+            border-left: 1px solid #444;
+            padding: 15px;
+            width: 250px;
+            overflow-y: auto;
+        }
+        #node-editor h3 { margin-top: 0; border-bottom: 1px solid var(--node-border); padding-bottom: 10px; }
+        #node-editor .form-group { margin-bottom: 15px; }
+        #node-editor label { display: block; margin-bottom: 5px; font-size: 0.9em; }
+        #node-editor input {
+            width: calc(100% - 12px); padding: 5px;
+            background: var(--input-bg); color: var(--text-color);
+            border: 1px solid var(--node-border); border-radius: 3px;
+        }
+        #node-editor-placeholder { color: var(--node-border); }
+        
+        /* Hlavní plocha */
+        #drawflow {
+            width: 100%; height: 100%;
+            background-image: linear-gradient(var(--node-border) 1px, transparent 1px), linear-gradient(90deg, var(--node-border) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .drawflow-node {
+            background: var(--node-bg);
+            border: 2px solid var(--node-border);
+            color: var(--text-color);
+            width: 180px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .drawflow-node.selected { border-color: var(--accent-color); }
+        .drawflow-node .input, .drawflow-node .output { background-color: var(--header-bg); border: 1px solid var(--node-border); }
+        .drawflow-node .drawflow_content_node { padding: 0; }
+        .drawflow-node .title-box { background: var(--header-bg); padding: 10px; border-top-left-radius: 6px; border-top-right-radius: 6px; font-weight: bold; text-align: center;}
+        .drawflow-node .box { padding: 10px; text-align: center; font-style: italic; color: #a0aec0; }
+        
+        /* Okno pro JSON */
+        #json-output {
+            position: fixed; top: 0; left: 0;
+            width: 100%; height: 100%; background-color: rgba(0,0,0,0.8);
+            display: none; justify-content: center; align-items: center;
+            z-index: 1000;
+        }
+        #json-output-content {
+            background-color: var(--header-bg);
+            padding: 20px; border-radius: 10px;
+            width: 80%; height: 80%;
+            display: flex; flex-direction: column;
+        }
+        #json-output-content h2 { margin-top: 0; }
+        #json-output-content textarea {
+            flex-grow: 1; width: 100%; box-sizing: border-box;
+            background-color: var(--bg-color); color: var(--text-color);
+            border: 1px solid var(--node-border); font-family: monospace; font-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Vizuální Konfigurátor</h1>
+        <button onclick="generateJson()">Vygenerovat config.json</button>
+    </header>
+    
+    <div class="container">
+        <aside class="col-left">
+            <p><strong>Dostupné bloky:</strong></p>
+            <ul>
+                <li draggable="true" ondragstart="drag(event)" data-node="HttpInput">HTTP Vstup</li>
+                <li draggable="true" ondragstart="drag(event)" data-node="DigitalInput">Digitální Vstup</li>
+                <li draggable="true" ondragstart="drag(event)" data-node="Lighting">Osvětlení</li>
+                <li draggable="true" ondragstart="drag(event)" data-node="LogicPassthrough">Logika: Rozdělovač</li>
+                <li draggable="true" ondragstart="drag(event)" data-node="LogicMasterSwitch">Logika: Hlavní vypínač</li>
+                <li draggable="true" ondragstart="drag(event)" data-node="Thermostat">Termostat</li>
+            </ul>
+        </aside>
+        <main id="drawflow" ondrop="drop(event)" ondragover="allowDrop(event)"></main>
+        <aside class="col-right">
+            <div id="node-editor">
+                <p id="node-editor-placeholder">Dvojklikem na blok zobrazíte jeho nastavení.</p>
+            </div>
+        </aside>
+    </div>
+
+    <div id="json-output" onclick="this.style.display='none'">
+        <div id="json-output-content" onclick="event.stopPropagation()">
+            <h2>Vygenerovaný <code>config.json</code></h2>
+            <textarea id="json-textarea" readonly></textarea>
+            <p style="text-align:center; margin-top: 10px;">Klikněte kamkoliv mimo toto okno pro zavření.</p>
+        </div>
+    </div>
+
+    <script>
+        const container = document.getElementById('drawflow');
+        const editor = new Drawflow(container);
+        editor.start();
+        
+        // --- Globální mapování pro definice bloků ---
+        const NODE_DEFINITIONS = {
+            'HttpInput': {
+                title: 'HTTP Vstup',
+                lua: 'http_input_block.lua',
+                inputs: 0, outputs: 1, output_names: ['value'],
+                fields: [
+                    { name: 'id', label: 'ID bloku', type: 'text', placeholder: 'http_in_pocasi' },
+                    { name: 'endpoint', label: 'Endpoint', type: 'text', placeholder: '/pocasi/teplota' }
+                ]
+            },
+            'DigitalInput': {
+                title: 'Digitální Vstup',
+                lua: 'digital_input_block.lua',
+                inputs: 0, outputs: 2, output_names: ['state', 'double_click'],
+                fields: [
+                    { name: 'id', label: 'ID bloku', type: 'text', placeholder: 'button_main' },
+                    { name: 'input_pin', label: 'Hardware Pin', type: 'number', placeholder: '5' }
+                ]
+            },
+            'Lighting': {
+                title: 'Osvětlení',
+                lua: 'lighting_block.lua',
+                inputs: 5, outputs: 1, 
+                input_names: ['power_button', 'motion_sensor', 'daylight_sensor', 'master_switch', 'temperature_check'],
+                output_names: ['status'],
+                fields: [
+                    { name: 'id', label: 'ID bloku', type: 'text', placeholder: 'light_1' },
+                    { name: 'output_pin', label: 'Výstupní Pin', type: 'number', placeholder: '10' }
+                ]
+            },
+            'LogicPassthrough': {
+                title: 'Logika: Rozdělovač',
+                lua: 'logic_passthrough_block.lua',
+                inputs: 1, outputs: 5, 
+                input_names: ['trigger'], 
+                output_names: ['output_1','output_2','output_3','output_4','output_5'],
+                fields: [
+                    { name: 'id', label: 'ID bloku', type: 'text', placeholder: 'logic_passthrough_1' }
+                ]
+            },
+            'LogicMasterSwitch': {
+                title: 'Logika: Hlavní vypínač',
+                lua: 'logic_block.lua',
+                inputs: 1, outputs: 1, 
+                input_names: ['toggle'], 
+                output_names: ['state'],
+                fields: [
+                    { name: 'id', label: 'ID bloku', type: 'text', placeholder: 'master_shutdown_logic' }
+                ]
+            },
+            'Thermostat': {
+                title: 'Termostat',
+                lua: 'thermostat_block.lua',
+                inputs: 1, outputs: 1, 
+                input_names: ['current_temperature'], 
+                output_names: ['heating_state'],
+                fields: [
+                    { name: 'id', label: 'ID bloku', type: 'text', placeholder: 'thermostat_1' },
+                    { name: 'set_point', label: 'Cílová teplota', type: 'number', step: '0.5', placeholder: '21.5' }
+                ]
+            }
+        };
+
+        // Zaregistrujeme všechny bloky v Drawflow
+        for (const nodeName in NODE_DEFINITIONS) {
+            const def = NODE_DEFINITIONS[nodeName];
+            editor.registerNode(nodeName, `
+                <div>
+                  <div class="title-box">${def.title}</div>
+                  <div class="box" df-id-display>ID: (nenastaveno)</div>
+                </div>
+            `);
+        }
+        
+        // --- Drag & Drop ---
+        function allowDrop(ev) { ev.preventDefault(); }
+        function drag(ev) { ev.dataTransfer.setData("node", ev.target.getAttribute('data-node')); }
+        function drop(ev) {
+            ev.preventDefault();
+            const nodeName = ev.dataTransfer.getData("node");
+            const def = NODE_DEFINITIONS[nodeName];
+            
+            const newNodeId = editor.addNode(nodeName, def.inputs, def.outputs, ev.clientX, ev.clientY, nodeName, {}, nodeName);
+            const nodeData = editor.getNodeFromId(newNodeId);
+            
+            // Přiřadíme jména vstupům a výstupům
+            if (def.input_names) {
+                Object.keys(nodeData.inputs).forEach((key, index) => {
+                    if (def.input_names[index]) nodeData.inputs[key].name = def.input_names[index];
+                });
+            }
+            if (def.output_names) {
+                Object.keys(nodeData.outputs).forEach((key, index) => {
+                    if (def.output_names[index]) nodeData.outputs[key].name = def.output_names[index];
+                });
+            }
+        }
+        
+        // --- Editor v postranním panelu ---
+        const editorPanel = document.getElementById('node-editor');
+        let selectedNodeId = null;
+
+        // Event listener pro dvojklik
+        editor.on('nodeSelected', function(id) {
+            const node = editor.getNodeFromId(id);
+            // Použijeme malý timeout, aby se odlišil jednoduchý klik od dvojkliku
+            if(node.dblclick_timer) {
+                clearTimeout(node.dblclick_timer);
+                node.dblclick_timer = null;
+                // Toto je dvojklik
+                showNodeEditor(id);
+            } else {
+                node.dblclick_timer = setTimeout(() => {
+                    node.dblclick_timer = null;
+                }, 300);
+            }
+        });
+
+        function showNodeEditor(id) {
+            selectedNodeId = id;
+            const node = editor.getNodeFromId(id);
+            const def = NODE_DEFINITIONS[node.name];
+            
+            editorPanel.innerHTML = ''; // Vyčistíme panel
+            const title = document.createElement('h3');
+            title.textContent = `Nastavení: ${def.title}`;
+            editorPanel.appendChild(title);
+
+            def.fields.forEach(field => {
+                const group = document.createElement('div');
+                group.className = 'form-group';
+
+                const label = document.createElement('label');
+                label.textContent = field.label;
+                group.appendChild(label);
+                
+                const input = document.createElement('input');
+                input.type = field.type;
+                input.placeholder = field.placeholder || '';
+                if (field.step) input.step = field.step;
+                input.value = node.data[field.name] || '';
+                
+                input.oninput = (e) => {
+                    // Aktualizujeme data v uzlu
+                    editor.updateNodeDataFromId(id, { ...node.data, [field.name]: e.target.value });
+                    // Aktualizujeme zobrazené ID přímo v bloku
+                    if(field.name === 'id') {
+                        const idDisplay = editor.getNodeFromId(id).html.querySelector('[df-id-display]');
+                        if(idDisplay) idDisplay.textContent = `ID: ${e.target.value || '(nenastaveno)'}`;
+                    }
+                };
+                group.appendChild(input);
+                editorPanel.appendChild(group);
+            });
+        }
+        
+        // --- Generování JSON ---
+        function generateJson() {
+            // ... zbytek této funkce je stejný jako v předchozí verzi ...
+            const exportData = editor.export();
+            const nodes = exportData.drawflow.Home.data;
+            
+            let config = {
+                "mqtt_broker_host": "localhost",
+                "mqtt_broker_port": 1883,
+                "blocks": []
+            };
+            
+            for (const nodeId in nodes) {
+                const node = nodes[nodeId];
+                const def = NODE_DEFINITIONS[node.name];
+                const id = node.data.id || `${node.name.toLowerCase().replace(/\s+/g, '_')}_${node.id}`;
+
+                let block = {
+                    "id": id,
+                    "type": node.name,
+                    "lua_script": def.lua,
+                    "config": {},
+                    "inputs": {},
+                    "outputs": {}
+                };
+
+                for(const key in node.data) {
+                    if (key !== 'id') {
+                        let value = node.data[key];
+                        if (value !== "" && !isNaN(value)) value = Number(value);
+                        block.config[key] = value;
+                    }
+                }
+                if (Object.keys(block.config).length === 0) delete block.config;
+
+                for (const outputKey in node.outputs) {
+                    const outputName = node.outputs[outputKey].name || outputKey.replace('output_', 'output');
+                    block.outputs[outputName] = `smarthome/${id}/${outputName}`;
+                }
+
+                for (const inputKey in node.inputs) {
+                    const connections = node.inputs[inputKey].connections;
+                    if (connections.length > 0) {
+                        const inputName = node.inputs[inputKey].name || inputKey.replace('input_', 'input');
+                        const connection = connections[0];
+                        const sourceNode = nodes[connection.node];
+                        const sourceOutputName = sourceNode.outputs[connection.output].name || connection.output.replace('output_', 'output');
+                        const sourceBlockId = sourceNode.data.id || `${sourceNode.name.toLowerCase().replace(/\s+/g, '_')}_${sourceNode.id}`;
+                        
+                        block.inputs[inputName] = {
+                            "source_block_id": sourceBlockId,
+                            "source_output": sourceOutputName
+                        };
+                    }
+                }
+                if (Object.keys(block.inputs).length === 0) delete block.inputs;
+                if (Object.keys(block.outputs).length === 0) delete block.outputs;
+
+                config.blocks.push(block);
+            }
+
+            const jsonString = JSON.stringify(config, null, 4);
+            document.getElementById('json-textarea').value = jsonString;
+            document.getElementById('json-output').style.display = 'flex';
+        }
+    </script>
+</body>
+</html>

@@ -1,11 +1,12 @@
 import threading
 from flask import Flask, jsonify, request
 import logging
+from block_parser import get_all_block_definitions # <-- PŘIDAT IMPORT
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
-def run_web_server(block_manager, all_blocks_config, state_cache):
+def run_web_server(block_manager, all_blocks_config, state_cache, lua_block_dir):
     """
     Spustí Flask server, který dynamicky vytvoří endpointy na základě konfigurace.
     """
@@ -74,6 +75,14 @@ def run_web_server(block_manager, all_blocks_config, state_cache):
             return jsonify({"topic": topic, "value": value})
         else:
             return jsonify({"status": "error", "message": "Topic not found in cache"}), 404
+
+    @app.route('/api/block-definitions', methods=['GET'])
+    def get_definitions():
+        try:
+            definitions = get_all_block_definitions(lua_block_dir)
+            return jsonify(definitions)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
     # --- Spuštění serveru ---
     def start_server():
