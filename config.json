@@ -1,0 +1,40 @@
+{
+    "mqtt_broker_host": "localhost",
+    "mqtt_broker_port": 1883,
+    "blocks": [
+        {
+            "id": "light_hall_1",
+            "type": "Lighting",
+            "lua_script": "lighting_block.lua",
+            "config": {
+                "default_brightness": 100,
+                "output_pin": 17,
+                "supports_dimming": true,
+                "web_editable_variables": ["default_brightness", "supports_dimming"]
+            },
+            "inputs": {
+                "power_button": {"source_block_id": "button_hall_entry", "source_output": "state"},
+                "motion_sensor": {"source_block_id": "motion_hall", "source_output": "detected"},
+                "daylight_sensor": {"source_block_id": "sensor_outside_light", "source_output": "lux"}
+            },
+            "outputs": {
+                "status": "mqtt/light/hall/1/status",
+                "current_brightness": "mqtt/light/hall/1/brightness"
+            }
+        },
+        {
+            "id": "button_hall_entry",
+            "type": "DigitalInput",
+            "lua_script": "digital_input_block.lua",
+            "config": {
+                "input_pin": 4,
+                "pull_up_down": "PULL_UP",
+                "debounce_time_ms": 50
+            },
+            "outputs": {
+                "state": "mqtt/button/hall/entry/state",
+                "double_click": "mqtt/button/hall/entry/double_click"
+            }
+        }
+    ]
+}
